@@ -1,8 +1,17 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-    <title>Поиск ближайших кафе</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Лучшие кафе рядом</title>
     <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
         .loader {
             border: 5px solid #f3f3f3;
             border-top: 5px solid #3498db;
@@ -11,68 +20,158 @@
             height: 40px;
             animation: spin 1s linear infinite;
             margin: 20px auto;
+            display: none;
         }
+
+        .error {
+            color: #dc3545;
+            padding: 10px;
+            border: 1px solid #dc3545;
+            margin: 10px 0;
+        }
+
+        .cafe-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .cafe-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
     </style>
 </head>
 <body>
-    <h1>Поиск ближайших кафе...</h1>
-    <div id="message">
-        <div class="loader"></div>
-        <p>Разрешите доступ к геолокации в вашем браузере</p>
-    </div>
+    <h1>Поиск лучших кафе поблизости</h1>
+    <button onclick="findCafes()">Найти кафе</button>
+    <div class="loader" id="loader"></div>
+    <div id="error" class="error"></div>
+    <ul class="cafe-list" id="results"></ul>
 
     <script>
-        // Функция для обработки успешного получения геолокации
-        function success(position) {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
-            
-            // Создаем скрытую форму для отправки данных
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '/';
-            
-            // Добавляем параметры в форму
-            const latInput = document.createElement('input');
-            latInput.type = 'hidden';
-            latInput.name = 'lat';
-            latInput.value = lat;
-            
-            const lonInput = document.createElement('input');
-            lonInput.type = 'hidden';
-            lonInput.name = 'lon';
-            lonInput.value = lon;
-            
-            form.appendChild(latInput);
-            form.appendChild(lonInput);
-            document.body.appendChild(form);
-            
-            // Отправляем форму
-            form.submit();
+        // Функция для расчета расстояния между двумя точками (формула гаверсинусов)
+        function haversine(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // Радиус Земли в метрах
+            const φ1 = lat1 * Math.PI/180;
+            const φ2 = lat2 * Math.PI/180;
+            const Δφ = (lat2 - lat1) * Math.PI/180;
+            const Δλ = (lon2 - lon1) * Math.PI/180;
+
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+            return R * c;
         }
 
-        // Функция обработки ошибок геолокации
-        function error(err) {
-            document.getElementById('message').innerHTML = `
-                <h2>Ошибка!</h2>
-                <p>${err.message}</p>
-                <p>Пожалуйста, обновите страницу и разрешите доступ к геолокации</p>
-            `;
+        // Получение данных кафе через Overpass API
+        async function getNearbyCafes(lat, lon, radius = 1000) {
+            const overpassUrl = 'https://overpass-api.de/api/interpreter';
+            const query = `[out:json];
+                node["amenity"="cafe"](around:${radius},${lat},${lon});
+                out body;`;
+            
+            try {
+                const response = await fetch(overpassUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain'
+                    },
+                    body: query
+                });
+                
+                const data = await response.json();
+                return data.elements || [];
+            } catch (error) {
+                throw new Error('Ошибка при запросе данных');
+            }
         }
 
-        // Запрашиваем геолокацию при загрузке страницы
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(success, error, {
-                enableHighAccuracy: true,
-                timeout: 5000,
-                maximumAge: 0
-            });
-        } else {
-            error({ message: "Геолокация не поддерживается вашим браузером" });
+        // Основная функция поиска кафе
+        async function findCafes() {
+            const loader = document.getElementById('loader');
+            const errorDiv = document.getElementById('error');
+            const results = document.getElementById('results');
+            
+            // Сброс предыдущих результатов
+            errorDiv.textContent = '';
+            results.innerHTML = '';
+            loader.style.display = 'block';
+
+            try {
+                // Получение геопозиции
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 5000
+                    });
+                });
+
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+
+                // Получение данных о кафе
+                const cafes = await getNearbyCafes(lat, lon);
+                
+                // Фильтрация и сортировка
+                const filtered = cafes
+                    .filter(cafe => cafe.tags?.name && cafe.tags?.rating)
+                    .map(cafe => ({
+                        name: cafe.tags.name,
+                        rating: parseFloat(cafe.tags.rating),
+                        distance: haversine(lat, lon, cafe.lat, cafe.lon),
+                        address: cafe.tags['addr:street'] || 'Адрес не указан'
+                    }))
+                    .sort((a, b) => 
+                        b.rating - a.rating || a.distance - b.distance
+                    )
+                    .slice(0, 3);
+
+                // Отображение результатов
+                if (filtered.length > 0) {
+                    results.innerHTML = filtered.map(cafe => `
+                        <li class="cafe-item">
+                            <h3>${cafe.name}</h3>
+                            <p>★ ${cafe.rating.toFixed(1)}/5</p>
+                            <p>📍 ${cafe.distance.toFixed(0)} метров</p>
+                            <p>${cafe.address}</p>
+                        </li>
+                    `).join('');
+                } else {
+                    results.innerHTML = '<p>Кафе с рейтингом не найдены</p>';
+                }
+            } catch (error) {
+                errorDiv.textContent = `Ошибка: ${error.message}`;
+            } finally {
+                loader.style.display = 'none';
+            }
+        }
+
+        // Проверка поддержки геолокации
+        if (!navigator.geolocation) {
+            document.getElementById('error').textContent = 
+                'Геолокация не поддерживается вашим браузером';
         }
     </script>
 </body>
