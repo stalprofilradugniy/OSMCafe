@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Поиск ближайших кафе</title>
+    <style>
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Поиск ближайших кафе...</h1>
+    <div id="message">
+        <div class="loader"></div>
+        <p>Разрешите доступ к геолокации в вашем браузере</p>
+    </div>
+
+    <script>
+        // Функция для обработки успешного получения геолокации
+        function success(position) {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            
+            // Создаем скрытую форму для отправки данных
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/';
+            
+            // Добавляем параметры в форму
+            const latInput = document.createElement('input');
+            latInput.type = 'hidden';
+            latInput.name = 'lat';
+            latInput.value = lat;
+            
+            const lonInput = document.createElement('input');
+            lonInput.type = 'hidden';
+            lonInput.name = 'lon';
+            lonInput.value = lon;
+            
+            form.appendChild(latInput);
+            form.appendChild(lonInput);
+            document.body.appendChild(form);
+            
+            // Отправляем форму
+            form.submit();
+        }
+
+        // Функция обработки ошибок геолокации
+        function error(err) {
+            document.getElementById('message').innerHTML = `
+                <h2>Ошибка!</h2>
+                <p>${err.message}</p>
+                <p>Пожалуйста, обновите страницу и разрешите доступ к геолокации</p>
+            `;
+        }
+
+        // Запрашиваем геолокацию при загрузке страницы
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(success, error, {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0
+            });
+        } else {
+            error({ message: "Геолокация не поддерживается вашим браузером" });
+        }
+    </script>
+</body>
+</html>
